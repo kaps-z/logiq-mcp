@@ -1,13 +1,14 @@
 # MCP Log Intelligence System
 
-A production-grade polyglot application that demonstrates the Model Context Protocol (MCP) using a Node.js log service, a Python MCP server with AI tools, and an AI-driven CLI for debugging.
+A production-grade polyglot application that demonstrates the Model Context Protocol (MCP) using a Node.js log service, a Python MCP server with AI tools, an AI-driven CLI, and an **Interactive React UI** for log generation and autonomous AI debugging.
 
 ## Architecture
 
+- **React Frontend (`logiq-ui`)**: A premium, dynamic Vite application where users can inject test logs, view real-time log tables, and interactively request and approve AI-generated code fixes.
 - **Node.js**: A log generation service (Express + better-sqlite3) exposing REST APIs (`POST /logs`, `GET /logs`).
-- **Python MCP Server**: Exposes MCP tools (`fetch_logs`, `analyze_logs`, `fix_issue`, `restart_service`) via JSON-RPC over `stdio`.
-- **AI Agent (CLI)**: A Python CLI application to interact with logs and run an autonomous AI agent that leverages OpenAI and MCP to reason, debug, and fix issues.
-- **Docker**: Used to simulate services that the `restart_service` tool can interact with.
+- **Python MCP Server**: Exposes MCP tools (`fetch_logs`, `analyze_logs`, `fix_issue`, `restart_service`, `read_file`, `fix_code_based_on_logs`) via JSON-RPC.
+- **Python AI API (`api.py`)**: A FastAPI application bridging the React frontend to the AI agent, allowing interactive code generation and patching.
+- **AI Agent (CLI)**: A Python CLI application to interact with logs and run autonomous AI agent loops natively.
 - **SQLite**: The central shared database.
 
 ## Setup Instructions
@@ -16,35 +17,41 @@ A production-grade polyglot application that demonstrates the Model Context Prot
 - Node.js > 18
 - Python > 3.10
 - Docker (for testing the restart_service tool)
-- OpenAI API Key
+- Groq API Key configured in your `.env`
 
-### 1. Database & Node Service Setup
+### 1. Database & Node Service Setup (Port 3000)
 ```bash
 cd node-service
 npm install
 npm run dev
 ```
 
-### 2. Python Tools
+### 2. Global Environment Config
+In the main project root folder, copy the example template:
+```bash
+cp .env.example .env
+```
+Now edit that `.env` file to insert your specific `GROQ_API_KEY`.
+
+### 3. Python Tools & AI API (Port 8000)
 In a new terminal:
 ```bash
 cd python-mcp
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+uvicorn api:app --host 0.0.0.0 --port 8000
 ```
 
-### 3. CLI Setup
+### 4. React Frontend UI (Port 5173)
 In a new terminal:
 ```bash
-cd cli
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-export OPENAI_API_KEY="your-api-key"
+cd logiq-ui
+npm install
+npm run dev
 ```
 
-### 4. Docker Test setup
+### 5. Docker Test setup (Optional)
 ```bash
 cd docker
 docker-compose up -d
@@ -52,20 +59,21 @@ docker-compose up -d
 
 ## Example Usage
 
-With the Node service running, you can use the CLI tool to manage logs and debug using the AI agent.
+### Using the React UI
+Navigate to `http://localhost:5173`. You can immediately:
+1. Simulate errors by injecting customized logs via the left-hand panel.
+2. Click **AI Debug** on any `ERROR` row.
+3. Review the AI's step-by-step reasoning and side-by-side code diff.
+4. Click **Approve & Apply File Patch** to securely backup the original code and overwrite it with the fix!
 
+### Using the CLI
 ```bash
-# In the cli directory
+cd cli
+source venv/bin/activate
 
-# 1. Create a log
-python main.py create-log ERROR "Failed to connect to test_service database. Connection Refused." "test_service"
+# Run interactive AI Agent analysis
+python3 main.py analyze-errors --service auth-service
 
-# 2. Get logs
-python main.py get-logs
-
-# 3. Analyze errors using AI Agent over MCP
-python main.py analyze-errors --service test_service
-
-# 4. Fix issues (will suggest fixes and attempt to restart container)
-python main.py fix-issue --service test_service
+# Autonomously fix known source code
+python3 main.py auto-fix auth-service ./auth-service/db.js
 ```

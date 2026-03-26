@@ -6,35 +6,37 @@ from typing import Optional
 from openai import AsyncOpenAI
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.session import ClientSession
+from contextlib import AsyncExitStack
 import mcp.types as types
 
-load_dotenv()
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+load_dotenv(env_path)
 
-openai_client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", "dummy-key"))
+openai_client = AsyncOpenAI(
+    api_key=os.environ.get("GROQ_API_KEY", "dummy-key"),
+    base_url="https://api.groq.com/openai/v1"
+)
 
 class DebugAgent:
     def __init__(self, server_script: str):
+        python_exe = os.path.abspath(os.path.join(os.path.dirname(__file__), '../python-mcp/venv/bin/python3'))
         self.server_parameters = StdioServerParameters(
-            command="python3",
+            command=python_exe,
             args=[server_script],
             env={**os.environ}
         )
         self.session: Optional[ClientSession] = None
-        self._client = None
+        self.exit_stack = AsyncExitStack()
 
     async def __aenter__(self):
-        self._client = stdio_client(self.server_parameters)
-        self.read, self.write = await self._client.__aenter__()
-        self.session = ClientSession(self.read, self.write)
-        await self.session.__aenter__()
+        streams = await self.exit_stack.enter_async_context(stdio_client(self.server_parameters))
+        self.read, self.write = streams
+        self.session = await self.exit_stack.enter_async_context(ClientSession(self.read, self.write))
         await self.session.initialize()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.__aexit__(exc_type, exc_val, exc_tb)
-        if self._client:
-            await self._client.__aexit__(exc_type, exc_val, exc_tb)
+        await self.exit_stack.aclose()
 
     async def run(self, objective: str):
         print(f"Agent Objective: {objective}")
@@ -55,13 +57,20 @@ class DebugAgent:
             })
 
         messages = [
-            {"role": "system", "content": "You are an autonomous AI debugging agent. You use tools to fetch logs, analyze them, find fixes, and restart services if necessary."},
+            {
+                "role": "system", 
+                "content": (
+                    "You are an autonomous AI debugging agent. You use tools to fetch logs, analyze them, find fixes, and restart services if necessary. "
+                    "CRITICAL: You MUST call one tool at a time, wait to receive the actual text result of that tool, and THEN call the next tool. "
+                    "NEVER pass un-evaluated variables or placeholders like '<fetch_logs_result>' as arguments into a tool."
+                )
+            },
             {"role": "user", "content": objective}
         ]
 
         while True:
             response = await openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="llama-3.3-70b-versatile",
                 messages=messages,
                 tools=openai_tools
             )

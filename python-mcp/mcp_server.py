@@ -10,7 +10,8 @@ from tools.db_tools import fetch_logs
 from tools.ai_tools import analyze_logs, fix_issue, fix_code_based_on_logs
 from tools.docker_tools import restart_service
 
-load_dotenv()
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+load_dotenv(env_path)
 
 app = Server("logiq-mcp-server")
 

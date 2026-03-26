@@ -5,7 +5,10 @@ import datetime
 from openai import AsyncOpenAI
 import traceback
 
-client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", "dummy_key"))
+client = AsyncOpenAI(
+    api_key=os.environ.get("GROQ_API_KEY", "dummy_key"),
+    base_url="https://api.groq.com/openai/v1"
+)
 
 async def analyze_logs(logs: str) -> str:
     try:
@@ -23,7 +26,7 @@ async def analyze_logs(logs: str) -> str:
         {logs}
         """
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
@@ -43,7 +46,7 @@ async def fix_issue(issue_type: str) -> str:
         }}
         """
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
@@ -90,7 +93,7 @@ async def fix_code_based_on_logs(logs: str, file_path: str) -> str:
         """
         
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
@@ -118,4 +121,57 @@ async def fix_code_based_on_logs(logs: str, file_path: str) -> str:
         
     except Exception as e:
         return json.dumps({"error": f"Auto-fix failed: {str(e)}", "traceback": traceback.format_exc()})
+
+async def preview_code_fix(logs: str, file_path: str) -> dict:
+    try:
+        if not os.path.exists(file_path):
+            return {"error": f"File not found: {file_path}"}
+            
+        with open(file_path, "r", encoding="utf-8") as f:
+            original_code = f.read()
+
+        prompt = f"""
+        You are an elite autonomous AI developer. 
+        Analyze the provided logs and the source code of the file. 
+        Determine the root cause of the errors in the logs and fix the source code.
+        
+        Requirements:
+        1. Add proper error handling, retry logic, or resource cleanup.
+        2. Ensure logging statements are added/updated for future debugging.
+        3. Add clear comments in the code explaining what the AI changed and why (e.g. "// AI FIX: ...").
+        4. Do NOT wrap the returned code in markdown blocks like ```python or ```javascript, just return the raw valid code as a string inside the JSON object's 'updated_code' field.
+
+        Return ONLY a JSON object with this schema:
+        {{
+            "updated_code": "The full source code of the file after your fixes (no markdown blocks)",
+            "changes_summary": "A detailed explanation of what was fixed and why",
+            "confidence_score": "float from 0.0 to 1.0",
+            "affected_logs": "Short summary of the logs that triggered this fix"
+        }}
+        
+        Logs:
+        {logs}
+        
+        Original Source Code:
+        {original_code}
+        """
+        
+        response = await client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        
+        result_json = json.loads(response.choices[0].message.content)
+        
+        return {
+            "status": "success",
+            "file_path": file_path,
+            "original_code": original_code,
+            "updated_code": result_json.get("updated_code", ""),
+            "changes_summary": result_json.get("changes_summary"),
+            "confidence_score": result_json.get("confidence_score")
+        }
+    except Exception as e:
+        return {"error": f"Preview failed: {str(e)}"}
 
